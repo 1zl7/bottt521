@@ -21,7 +21,19 @@ class Bot {
     this.ai = new AI(cfg, log);
     this.persona = new Persona();
     this.lastQuotaLogAt = 0;
-    this.state = { myId: null, lastMessageId: null, paused: false, lastGameActivityAt: 0, nextAutoStartAt: 0, lastPromptReplyAt: 0, lastChatAt: 0, nextFlagAt: 0, starterDueAt: 0, unansweredStarters: 0, lastFlagMessageId: null };
+    this.state = {
+      myId: null,
+      lastMessageId: null,
+      paused: false,
+      lastGameActivityAt: 0,
+      nextAutoStartAt: 0,
+      lastPromptReplyAt: 0,
+      lastChatAt: 0,
+      nextFlagAt: 0,
+      starterDueAt: 0,
+      unansweredStarters: 0,
+      lastFlagMessageId: null,
+    };
     this.seen = new Set();
     this.history = [];
     this.flagCache = new Map();
@@ -63,24 +75,15 @@ class Bot {
     }
   }
 
-  isOlderFlagMessage(msg) {
-    if (!msg?.id) return false;
-    const currentId = BigInt(msg.id);
-    if (this.state.lastFlagMessageId === null) return false;
-    if (currentId < BigInt(this.state.lastFlagMessageId)) {
-      this.log.game(`تجاهلت علم قديم: ${msg.id} < ${this.state.lastFlagMessageId}`);
-      return true;
-    }
-    return false;
-  }
-
   markLatestFlagMessage(msg) {
     if (!msg?.id) return false;
     const currentId = BigInt(msg.id);
-    if (this.state.lastFlagMessageId !== null && currentId < BigInt(this.state.lastFlagMessageId)) {
+    const lastId = this.state.lastFlagMessageId;
+    if (lastId !== null && currentId < BigInt(lastId)) {
+      this.log.game(`تجاهلت علم قديم: ${msg.id} < ${lastId}`);
       return true;
     }
-    this.state.lastFlagMessageId = currentId;
+    this.state.lastFlagMessageId = msg.id;
     return false;
   }
 
@@ -247,7 +250,7 @@ class Bot {
   async handleHuman(msg, content) {
     const text = content.trim();
     if (!text) return;
-    if (text.startsWith(this.cfg.prefix) || /^[-!\/]/.test(text)) return; // أوامر ألعاب/بوتات
+    if (text.startsWith(this.cfg.prefix) || /^[-!/]/.test(text)) return; // أوامر ألعاب/بوتات
 
     const myId = this.state.myId;
     const author = msg.author?.username || "مجهول";
@@ -406,8 +409,10 @@ class Bot {
         const msgs = await this.discord.messages({ after: this.state.lastMessageId });
         errors = 0;
         if (!msgs.length) continue;
+
         const newestFirst = [...msgs].sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? 1 : -1));
         this.state.lastMessageId = newestFirst[0].id;
+
         for (const m of newestFirst) {
           await this.handleMessage(m);
         }
