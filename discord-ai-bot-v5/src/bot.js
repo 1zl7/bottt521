@@ -63,6 +63,27 @@ class Bot {
     }
   }
 
+  isOlderFlagMessage(msg) {
+    if (!msg?.id) return false;
+    const currentId = BigInt(msg.id);
+    if (this.state.lastFlagMessageId === null) return false;
+    if (currentId < BigInt(this.state.lastFlagMessageId)) {
+      this.log.game(`تجاهلت علم قديم: ${msg.id} < ${this.state.lastFlagMessageId}`);
+      return true;
+    }
+    return false;
+  }
+
+  markLatestFlagMessage(msg) {
+    if (!msg?.id) return false;
+    const currentId = BigInt(msg.id);
+    if (this.state.lastFlagMessageId !== null && currentId < BigInt(this.state.lastFlagMessageId)) {
+      return true;
+    }
+    this.state.lastFlagMessageId = currentId;
+    return false;
+  }
+
   // ── الإرسال (مع قاطع طوارئ يمنع الحلقات المجنونة) ───────────
   async send(content, opts) {
     const now = Date.now();
@@ -143,14 +164,9 @@ class Bot {
     // 2) صورة علم
     const images = T.extractImages(msg);
     if (images.length) {
-      if (msg.id) {
-        const currentId = BigInt(msg.id);
-        const lastSeenId = this.state.lastFlagMessageId;
-        if (lastSeenId !== null && currentId < lastSeenId) {
-          this.log.game(`تجاهلت علم قديم (${msg.id}) لأن هناك علم أحدث في الطابور`);
-          return;
-        }
-        this.state.lastFlagMessageId = currentId;
+      if (this.markLatestFlagMessage(msg)) {
+        this.log.game(`تجاهلت علم قديم (${msg.id}) لأنه أقدم من آخر علم تم مشاهدته`);
+        return;
       }
       if (T.hasAny(normText, T.FLAG_KEYWORDS) || this.gameActive()) return this.solveFlag(images[0]);
       return;
@@ -390,10 +406,11 @@ class Bot {
         const msgs = await this.discord.messages({ after: this.state.lastMessageId });
         errors = 0;
         if (!msgs.length) continue;
-        this.state.lastMessageId = msgs[msgs.length - 1].id;
-        // نبدأ من الأحدث أولاً عشان لا يرد البوت على أقدم علم بعد ما وصل أحدث علم في نفس الدفعة
         const newestFirst = [...msgs].sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? 1 : -1));
-        for (const m of newestFirst) this.handleMessage(m).catch((e) => this.onHandlerError(e));
+        this.state.lastMessageId = newestFirst[0].id;
+        for (const m of newestFirst) {
+          await this.handleMessage(m);
+        }
       } catch (e) {
         if (e.fatal) throw e;
         this.stats.errors++;
